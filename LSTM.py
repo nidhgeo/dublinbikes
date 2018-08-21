@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
 """
+Python file used for LSTM Modelling - Regression and Classification
 
+Reads the csv data, converts categorical data to numerical form and performs one-hot encoding.
+Also does scaling of values.
 """
 
-
+import numpy as np
+import pandas as pd
+import random
 import math
 from sklearn.metrics import classification_report, confusion_matrix
 from numpy import concatenate
@@ -19,13 +24,13 @@ from keras.layers import Dense
 from keras.layers import LSTM
 from sklearn.preprocessing import OneHotEncoder
 from sklearn import preprocessing
-import numpy as np
-import pandas as pd
 from keras import optimizers
 from array import array
 import statistics as stat
 from scipy import stats
-import random
+
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import matthews_corrcoef
 # All parameter gradients will be clipped to
 # a maximum norm of 1.
 
@@ -36,6 +41,7 @@ np.random.seed(3482)
 datasetTrain = read_csv('C:/MSc Materials/Dissertation/dublin_bikes-master/train_df2-with_prevweeks_avind_for_python.csv', header=0, index_col=0)
 datasetTest = read_csv('C:/MSc Materials/Dissertation/dublin_bikes-master/test_df2-with_prevweeks_avind_for_python.csv', header=0, index_col=0)
 
+
 datasets= []
 datasets.append(datasetTrain)
 datasets.append(datasetTest)
@@ -43,7 +49,8 @@ datasets.append(datasetTest)
 index=0
 #for obj in datasets:
 obj=datasetTrain.append(datasetTest)
-    
+  
+# Converting categorical variables to their string equivalents and then doing one-hot encoding	
 catVariables = obj.select_dtypes(include=[object])
 le = preprocessing.LabelEncoder()
 # 2/3. FIT AND TRANSFORM
@@ -106,7 +113,7 @@ test_Original=obj.values[randomNums, :]
 #train=train.values
 #test=test.values
 
-
+# Preparing the input-output pairs for train and test 
 train_X, train_y = np.hstack((train[:, 0:1],train[:, 3:314])), train[:, 2]
 test_X, test_y = np.hstack((test[:, 0:1],test[:, 3:314])), test[:, 2]
 
@@ -115,7 +122,7 @@ train_X = train_X.reshape((train_X.shape[0], 1, train_X.shape[1]))
 test_X = test_X.reshape((test_X.shape[0], 1, test_X.shape[1]))
 print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)
 
-
+# LSTM Modelling
 model = Sequential()
 model.add(LSTM(20, input_shape=(train_X.shape[1], train_X.shape[2])))
 model.add(Dense(units=1, activation='relu'))
@@ -144,6 +151,7 @@ yhat.shape
 rmse = math.sqrt(mean_squared_error(test_y, yhat))
 print('Test RMSE: %.3f' % rmse)
 
+#Function for RMSLE
 def rmsle(y, y_pred):
 	assert len(y) == len(y_pred)
 	terms_to_sum = [(math.log(y_pred[i] + 1) - math.log(y[i] + 1)) ** 2.0 for i,pred in enumerate(y_pred)]
@@ -153,6 +161,7 @@ rmsle(test_y, yhat)
 
 any(n < 0 for n in yhat)
 
+#Preparing input-output pairs for min-max scaling
 train_X2, train_y2 = np.hstack((train[:, 0:1],train[:, 3:314])), train[:, 2]
 test_X2, test_y2 = np.hstack((test[:, 0:1],test[:, 3:314])), test[:, 2]
 
@@ -163,6 +172,7 @@ X_test_minmax = min_max_scaler.transform(test_X2)
 X_train_minmax = X_train_minmax.reshape((X_train_minmax.shape[0], 1, X_train_minmax.shape[1]))
 X_test_minmax = X_test_minmax.reshape((X_test_minmax.shape[0], 1, X_test_minmax.shape[1]))
 
+#Fitting LSTM model with scaled variables
 modelNew = Sequential()
 modelNew.add(LSTM(20, input_shape=(X_train_minmax.shape[1], X_train_minmax.shape[2])))
 modelNew.add(Dense(units=1, activation='relu'))
@@ -222,7 +232,7 @@ train_X = train_X.reshape((train_X.shape[0], 1, train_X.shape[1]))
 test_X = test_X.reshape((test_X.shape[0], 1, test_X.shape[1]))
 print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)
 
-
+#LSTM Model
 model = Sequential()
 model.add(LSTM(20, input_shape=(train_X.shape[1], train_X.shape[2])))
 model.add(Dense(units=1, activation='sigmoid'))
@@ -247,17 +257,20 @@ for i in range(len(yhat2)):
     else:
         yhat2[i] = 1
     test_y=test_y.astype(float)
-        
+     
+	
+#Confusion Matrix	
 labels = [0, 1]
 confusion_matrix(test_y, yhat2, labels)
 
-from sklearn.metrics import matthews_corrcoef
+#MCC
 matthews_corrcoef(test_y, yhat2) 
 
-from sklearn.metrics import accuracy_score
+#Accuracy
 accuracy_score(test_y, yhat2) 
 
 
+#Exporting data to CSV - To create consistent looking plots in R
 dataResults2 = np.hstack((obj.values, yhat2))
 
 pd.DataFrame(dataResults).to_csv("C:/MSc Materials/Dissertation/dublin_bikes-master/regOutput-python.csv")
