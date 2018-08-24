@@ -90,7 +90,7 @@ df <- all_clust %>%
 
 
 selected
-# Group time into 48 factors
+# Group time into 48 factors and categorize the seasons
 time_df2 <- df %>%
   mutate(
     t_hour = as.numeric(str_extract(Time, "^\\d{1,2}")),
@@ -135,7 +135,7 @@ time_df2 <- df %>%
 
 
 
-
+#Calculating the bike numbers from precious weeks
 for(i in 1:nrow(time_df2)) {
   currDate <- time_df2[i,"Date"]
   currTime <- time_df2[i,"Time"]
@@ -182,6 +182,7 @@ for(i in 1:nrow(time_df2)) {
  # } 
 }
 
+#Saving the data frame
 write_rds(time_df2, "time_df2_withprevweeks.rds") 
 
 head(wInfo)
@@ -212,12 +213,11 @@ time_df2 <- time_df2 %>%
   left_join(geo, by = "Number") %>%
   select(-Name.y, -Address.y, Name = Name.x, Address = Address.x)
 
-
+#Reading the weather info from M2 weather buoy
 wInfo <- read_csv("M2_weather.csv")
 
 wInfo <- distinct(wInfo)
 
-# Calculate difference in number of bikes between periods
 wInfo <- wInfo %>%
   # Convert POSIXct to date and split into each col
   mutate(
@@ -231,9 +231,10 @@ wInfo <- wInfo %>%
     #Time = paste(Hour, Min, Sec, sep = ":")
   )
 
-
+#Imputing the missing values with mean
 wInfo$AirTemperature[is.na(wInfo$AirTemperature)]=mean(wInfo$AirTemperature, na.rm = T)
 wInfo$WindSpeed[is.na(wInfo$WindSpeed)]=mean(wInfo$WindSpeed, na.rm = T)
+
 
 time_df2 <- read_rds("time_df2_withprevweeks.rds")
 # Join the geographical info to the original dataset
@@ -243,19 +244,20 @@ rf_df2 <- time_df2 %>%
 
 #df2 <- merge(x=rf_df2, y=wInfo, by=c("Date", "Hour"), all.x=TRUE)
 
+
 rf_df2 <- rf_df2 %>% mutate(Hour=as.numeric(str_extract(Time, "^\\d{1,2}")),
                             DateNew=ymd(Date))
-
 
 write.csv(wInfo, file = "wInfo.csv")
 write.csv(rf_df2, file = "rf_df2.csv")
 
+#Joining weather info with bike usage data
 df2<-NULL
 df2 <- merge(rf_df2, wInfo, all.x=T)
 
 
 
-#Holiday Data
+#Reading Holiday Data
 holidays <- read_csv("holiday16-17.csv")
 
 holidays <- holidays %>%
@@ -270,12 +272,13 @@ holidays <- holidays %>%
   )
 
 
-
+#joining holiday data with the usage-weather data frame
 df2 <- df2 %>%
   left_join(holidays, by=c("Date"))
 
 write_csv(df2, "df2_exploration.csv")
 
+#Creating a categorical column for holiday/observance indicator
 df2 <- df2 %>%
   mutate(holiday=ifelse(df2$`Holiday_Name`!='NA', 'T', 'F'))
 
@@ -285,6 +288,7 @@ df2$holiday <- ifelse(is.na(df2$holiday), 'F', 'T')
 
 write.csv(df2, file = "df2-test.csv")
 
+#Creating new columns for available bikes percentage
 df2<-df2%>%
   mutate(
     av_perc= (av_bikes/Bike_stands)*100,
@@ -294,7 +298,7 @@ df2<-df2%>%
 
 df2$av_ind <- factor(df2$av_ind)
 
-# Create training and test samples
+
 #n = floor(nrow(rf_df)/ 10)
 #lb = 7*n +1
 #ub = 10*n
@@ -306,6 +310,7 @@ write.csv(df2, file = "df2-with_prevweeks_avind.csv")
 #df2$WindSpeed[is.na(df2$WindSpeed)]=0
 #df2$AirTemperature[is.na(df2$AirTemperature)]=0
 
+# Create training and test samples
 n = floor(nrow(df2)/ 4)
 set.seed(3482)
 indexValues <- sample( nrow(df2),n, replace=T)
@@ -346,21 +351,12 @@ test<- read_csv("test_df2-with_prevweeks_avind.csv", col_types = cols(Time.x = c
 
 #typeof(prevWeekDate[[1]])
 #newDF <- time_df2[, time_df2$Date==prevWeekDate[[1]] & time_df2$Time == (currTime[1,1])]
-
 #time_df2[,time_df2$Time %in% currTime]
-
-
-
 #nrow(filter(time_df2, Date == "2016-09-12"))
-
 #time_df2[, "prevWeek_bike_num"]
 
 
-
-
-
-
-# Run forest model and evaluate results
+# Run random forest model and evaluate results
 start.time <- Sys.time()
 rf <- randomForest(av_bikes ~  Weekday + Time.x + prev_bike_num +
                      cluster + Latitude + Longitude + season + AirTemperature +WindSpeed,
@@ -373,7 +369,7 @@ rf
 plot(rf)
 importance(rf)
 varImpPlot(rf)
-write_rds(rf, "C:/MSc Materials/Dissertation/dublin_bikes-master/saved_data_frames/rf_model_with_weather.rds") # Save rf to avoid running it again
+write_rds(rf, "saved_data_frames/rf_model_with_weather.rds") # Save rf to avoid running it again
 
 
 
@@ -448,7 +444,7 @@ test_set_mean_pred
 ggsave("./plots/predictions/test_mean_prediction.png", test_set_mean_pred)
 
 
-#Gradient Boosting
+#Gradient Boosting from gbm pacakge
 start2.time <- Sys.time()
 boost=gbm(av_bikes ~  Weekday + Time.x + prev_bike_num2 +cluster + Latitude + Longitude + season + WindSpeed + AirTemperature,
           data = train,distribution = "gaussian",n.trees = 10000,
@@ -458,11 +454,7 @@ summary(boost)
 end2.time <- Sys.time()
 time2.taken <- end2.time - start2.time
 time2.taken
-
-
-
-
-write_rds(boost, "C:/MSc Materials/Dissertation/dublin_bikes-master/saved_data_frames/gbm_model_with_Weather.rds") # Save GB to avoid running it again
+write_rds(boost, "saved_data_frames/gbm_model_with_Weather.rds") # Save GB to avoid running it again
 boost
 plot(boost)
 
@@ -486,6 +478,10 @@ test$predGB <- predict.gbm(boost, test)
 rmsle(test$predGB, test$av_bikes)
 rmse(test$predGB, test$av_bikes)
 
+
+#Machine learning imlementaitons from caret package
+
+#GBM
 fitControl <- trainControl(method = "cv", number = 4)
 start2.time <- Sys.time()
 newgbm<-train(av_bikes ~  Weekday + Time.x + prev_bike_num +cluster + Latitude + Longitude + season + WindSpeed + AirTemperature + holiday, 
@@ -509,7 +505,7 @@ end2.time <- Sys.time()
 time2.taken <- end2.time - start2.time
 time2.taken
 
-
+#Predicting the values and calculating the RMSE/RMSLE
 test$predGBMCaret <- predict(newgbm, newdata = test, type="raw",na.action =NULL)
 rmsle(test$predGBMCaret, test$av_bikes)
 rmse(test$predGBMCaret, test$av_bikes)
@@ -517,6 +513,7 @@ anyNA(test$predGBMCaret)
 
 table(test$predGBMCaret, test$av_ind)
 
+#Random Forest
 fitControl <- trainControl(method = "cv", number = 2)
 start2.time <- Sys.time()
 newrf<-train(av_bikes ~  Weekday + Time.x + prev_bike_num +cluster + Latitude + Longitude + season + WindSpeed + AirTemperature, data = train, method = "rf",
@@ -533,11 +530,8 @@ rmsle(test$predRFCaret, test$av_bikes)
 rmse(test$predRFCaret, test$av_bikes)
 
 
-
-library(caret)
-
+# GBM - experimental run with a different bike nuum predictor
 fitControl <- trainControl(method = "cv", number = 5)
-
 start2.time <- Sys.time()
 newgbm<-train(av_bikes ~  Weekday + Time.x + prev_bike_num +cluster + Latitude + Longitude + season + WindSpeed + AirTemperature + holiday, 
               data = train, method = "gbm",
@@ -556,6 +550,7 @@ test$predGBMCaret[test$predGBMCaret<0]=0
 rmsle(test$predGBMCaret, test$av_bikes)
 rmse(test$predGBMCaret, test$av_bikes)
 
+#Elastic Net
 library(elasticnet)
 start2.time <- Sys.time()
 enetModel<-train(av_bikes ~  Weekday + Time.x + prev_bike_num +cluster + Latitude + Longitude + season + WindSpeed + AirTemperature + holiday, 
@@ -575,6 +570,7 @@ test$predENETCaret[test$predENETCaret<0]=0
 rmsle(test$predENETCaret, test$av_bikes)
 rmse(test$predENETCaret, test$av_bikes)
 
+# Linear Regression with Stepwise Selection
 start2.time <- Sys.time()
 lnrStpModel<-train(av_bikes ~  Weekday + Time.x + prev_bike_num +cluster + Latitude + Longitude + season + WindSpeed + AirTemperature + holiday, 
                 data = train, method = "leapSeq",
@@ -587,16 +583,16 @@ time2.taken <- end2.time - start2.time
 time2.taken
 
 
-#lnrStpModel<-read_rds("C:/MSc Materials/Dissertation/dublin_bikes-master/models/lnrStpModel_with_weather_caret.rds")
+#lnrStpModel<-read_rds("models/lnrStpModel_with_weather_caret.rds")
 
 
 test$predLNRSTPCaret <- predict(lnrStpModel, newdata = test, type="raw",na.action =NULL)
-
 test$predLNRSTPCaret[test$predLNRSTPCaret<0]=0
 
 rmsle(test$predLNRSTPCaret, test$av_bikes)
 rmse(test$predLNRSTPCaret, test$av_bikes)
 
+#Boosted Linear Regression
 start2.time <- Sys.time()
 bstLmModel<-train(av_bikes ~  Weekday + Time.x + prev_bike_num +cluster + Latitude + Longitude + season + WindSpeed + AirTemperature + holiday, 
                    data = train, method = "BstLm",
@@ -617,6 +613,8 @@ test$predBstLmCaret[test$predBstLmCaret<0]=0
 rmsle(test$predBstLmCaret, test$av_bikes)
 rmse(test$predBstLmCaret, test$av_bikes)
 
+
+#KNN
 library(kknn)
 start2.time <- Sys.time()
 knnRegModel<-train(av_bikes ~  Weekday + Time + prev_bike_num +cluster + Latitude + Longitude + season + WindSpeed + AirTemperature + holiday, 
@@ -640,6 +638,8 @@ rmse(test$predknnRegCaret, test$av_bikes)
 any(is.na(test$predGBMCaret))
 which(is.nan(log(test$predGBMCaret+1)))
 
+
+#SVM - Linear
 start2.time <- Sys.time()
 
 ctrl <- trainControl(method = "cv", 
@@ -660,6 +660,8 @@ time2.taken <- end2.time - start2.time
 time2.taken
 write_rds(newgbm2, "svmLmodel_with_weather_caret.rds") # Save rf to avoid running it again
 
+
+#SVM - Radial
 start2.time <- Sys.time()
 
 ctrl <- trainControl(method = "cv", 
@@ -681,56 +683,54 @@ time2.taken
 
 write_rds(svmR, "svmRmodel_with_weather_caret.rds") # Save rf to avoid running it again
 
-start2.time <- Sys.time()
-newgbm3<-train(av_bikes ~  Weekday + Time.x + prevWeek_bike_num + prevWeek_bike_num2 + prevWeek_bike_num3 + prevWeek_bike_num4 
-               + cluster + Latitude + Longitude + season + WindSpeed + AirTemperature + holiday, 
-               data = train, method = "gbm",
-               trControl = fitControl,
-               verbose = FALSE, na.action=na.omit)
-newgbm3
-summary(newgbm3)
-end2.time <- Sys.time()
-time2.taken <- end2.time - start2.time
-time2.taken
-test$predGBMCaret3 <- predict(newgbm3, newdata = test, type="raw",na.action =NULL)
-rmsle(test$predGBMCaret3, test$av_bikes)
-rmse(test$predGBMCaret3, test$av_bikes)
 
-sqrt(1/length(test$av_bikes)*sum((log(test$predGBMCaret3 +1)-log(test$av_bikes +1))^2))
+# GBM- Classification
+#start2.time <- Sys.time()
+#newgbm3<-train(av_bikes ~  Weekday + Time.x + prevWeek_bike_num + prevWeek_bike_num2 + prevWeek_bike_num3 + prevWeek_bike_num4 
+#               + cluster + Latitude + Longitude + season + WindSpeed + AirTemperature + holiday, 
+ #              data = train, method = "gbm",
+ #              trControl = fitControl,
+ #              verbose = FALSE, na.action=na.omit)
+#newgbm3
+#summary(newgbm3)
+#end2.time <- Sys.time()
+#time2.taken <- end2.time - start2.time
+#time2.taken
+#test$predGBMCaret3 <- predict(newgbm3, newdata = test, type="raw",na.action =NULL)
+#rmsle(test$predGBMCaret3, test$av_bikes)
+#rmse(test$predGBMCaret3, test$av_bikes)
 
-
-test$predGBMCaret <- predict(newgbm3, newdata = test, type="raw", na.action = na.pass)
-rmsle(test$predGBMCaret, test$av_bikes)
-rmse(test$predGBMCaret, test$av_bikes)
-any(is.na(test$predGBMCaret))
-which(is.nan(log(test$predGBMCaret+1)))
-
-predGBMCaret <- predict(newgbm3, newdata = test, type="raw", na.action = na.pass)
-length(predGBMCaret)
-length(test$av_bikes)
-rmsle(predGBMCaret, test$av_bikes)
-rmse(predGBMCaret, test$av_bikes)
-any(is.na(predGBMCaret))
-which(is.nan(log(predGBMCaret+1)))
-
-test$predGBMCaret2 <- predict(newgbm2, newdata = test, type="prob",na.action =NULL)
-pred <- factor(ifelse(test$predGBMCaret2[,'low'] > .6, "low", "high"))
-
-length(pred)
-length(test$av_ind)
+#sqrt(1/length(test$av_bikes)*sum((log(test$predGBMCaret3 +1)-log(test$av_bikes +1))^2))
 
 
-confusionMatrix(test$av_ind, pred)
+#test$predGBMCaret <- predict(newgbm3, newdata = test, type="raw", na.action = na.pass)
+#rmsle(test$predGBMCaret, test$av_bikes)
+#rmse(test$predGBMCaret, test$av_bikes)
+#any(is.na(test$predGBMCaret))
+#which(is.nan(log(test$predGBMCaret+1)))
+
+#predGBMCaret <- predict(newgbm3, newdata = test, type="raw", na.action = na.pass)
+#length(predGBMCaret)
+#length(test$av_bikes)
+#rmsle(predGBMCaret, test$av_bikes)
+#rmse(predGBMCaret, test$av_bikes)
+#any(is.na(predGBMCaret))
+#which(is.nan(log(predGBMCaret+1)))
+
+#test$predGBMCaret2 <- predict(newgbm2, newdata = test, type="prob",na.action =NULL)
+#pred <- factor(ifelse(test$predGBMCaret2[,'low'] > .6, "low", "high"))
+
+#length(pred)
+#length(test$av_ind)
+
+
+#confusionMatrix(test$av_ind, pred)
 #table(test$predGBMCaret2, test$av_ind)
+#anyNA(test$predGBMCaret)
 
+## Classification Models
 
-
-
-
-
-anyNA(test$predGBMCaret)
-
-
+# CLeaning the missing values from previous bike number columns
 library(DataCombine)
 
 train2 <- DropNA(train, Var = c("prevWeek_bike_num","prevWeek_bike_num2","prevWeek_bike_num3","prevWeek_bike_num4"))
@@ -744,9 +744,9 @@ train2=train2 %>% mutate_if(is.character, as.factor)
 train2$av_ind<-factor(train2$av_ind)
 test2$av_ind<-factor(test2$av_ind)
 
-# NOT RUN {
 nearZeroVar(train2, saveMetrics = TRUE)
 
+#SVM- Linear
 start2.time <- Sys.time()
 trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
 
@@ -766,6 +766,7 @@ test$predSVM <- predict(svmModel, newdata = test, type="prob",na.action =NULL)
 pred <- factor(ifelse(test$predSVM[,'low'] > .5, "low", "high"))
 confusionMatrix(test$av_ind, pred)
 
+# User defined function for calculating f1 score
 f1_score <- function(predicted, expected, positive.class="high") {
   predicted <- factor(as.character(predicted), levels=unique(as.character(expected)))
   expected  <- as.factor(expected)
@@ -782,7 +783,7 @@ f1_score <- function(predicted, expected, positive.class="high") {
   ifelse(nlevels(expected) == 2, f1[positive.class], mean(f1))
 }
 
-
+#User defined function for calculating MCC score
 mcc <- function (actual, predicted, positive="high", negative="low")
 {
   # Compute the Matthews correlation coefficient (MCC) score
@@ -809,7 +810,7 @@ mcc <- function (actual, predicted, positive="high", negative="low")
   return(mcc)
 }
 
-
+#KNN
 library(kknn)
 fitControl <- trainControl(method = "cv", number = 5)
 
@@ -834,7 +835,7 @@ train2[train2[,'season']=='Summer',]
 
 
 
-
+#LDA
 start2.time <- Sys.time()
 ldaModel<-train(av_ind ~  Weekday + Time.x + prevWeek_bike_num + prevWeek_bike_num2 + prevWeek_bike_num3 + prevWeek_bike_num4 +cluster + Latitude + Longitude + season + holiday, 
                 data = train2, method = "lda",
@@ -848,14 +849,9 @@ time2.taken
 test2$ldaModel <- predict(ldaModel, newdata = test2, type="raw",na.action = na.pass)
 #predldaModel <- factor(ifelse(test2$ldaModel[,'low'] > .4, "low", "high"))
 confusionMatrix(test2$av_ind, test2$ldaModel)
-
-
 mcc(test2$av_ind, test2$ldaModel)
 
-
-
-
-
+#QDA
 start2.time <- Sys.time()
 qdaModel<-train(av_ind ~  Weekday + Time.x + prevWeek_bike_num + prevWeek_bike_num2 + prevWeek_bike_num3 + prevWeek_bike_num4 +cluster + Latitude + Longitude + season + holiday, 
                 data = train2, method = "qda",
@@ -872,6 +868,7 @@ test2$qdaModel <- predict(qdaModel, newdata = test2, type="raw",na.action = na.p
 confusionMatrix(test2$av_ind, test2$qdaModel)
 mcc(test2$av_ind, test2$qdaModel)
 
+#Logistic Regression
 start2.time <- Sys.time()
 ctrl <- trainControl(method = "cv", 
                      summaryFunction = twoClassSummary, 
@@ -889,14 +886,13 @@ time2.taken
 
 test2$predLogistic <- predict(logisticModel, newdata = test2, type="raw",na.action = na.pass)
 #predlogistic <- factor(ifelse(test$predLogistic[,'low'] > .5, "low", "high"))
-
-
 confusionMatrix(test2$av_ind, test2$predLogistic )
 
 mcc(test2$av_ind, test2$predLogistic)
 
-fitControl <- trainControl(method = "cv", number = 5)
 
+#GBM - Classification
+fitControl <- trainControl(method = "cv", number = 5)
 start2.time <- Sys.time()
 gbmCategorical<-train(av_ind ~  Weekday + Time.x + prevWeek_bike_num + prevWeek_bike_num2 + prevWeek_bike_num3 + prevWeek_bike_num4 +cluster + Latitude + Longitude + season + holiday, 
                       data = train2, method = "gbm",
@@ -913,6 +909,7 @@ confusionMatrix(test2$av_ind, test2$gbmCategorical)
 mcc(test2$av_ind, test2$gbmCategorical)
 
 
+#Random Frest - Classification
 start2.time <- Sys.time()
 rfCategorical<-train(av_ind ~  Weekday + Time.x + prevWeek_bike_num + prevWeek_bike_num2 + prevWeek_bike_num3 + prevWeek_bike_num4 +cluster + Latitude + Longitude + season + holiday, 
                       data = train2, method = "rf",
@@ -928,10 +925,7 @@ test2$rfCategorical <- predict(rfCategorical, newdata = test2, type="raw",na.act
 confusionMatrix(test2$av_ind, test2$rfCategorical)
 mcc(test2$av_ind, test2$rfCategorical)
 
-
-
 test$predGBRound <- round(test$predLNRSTPCaret)
-
 gb_err <- rmse(test$predGBRound, test$av_bikes)
 gb_err
 
@@ -990,7 +984,7 @@ test_set_mean_predgb
 
 
 
-
+##### EXPERIMENTAL MODELS ###############
 #Gradient Boosting
 start2.time <- Sys.time()
 boost=gbm(av_bikes ~  Weekday + Time + prevWeek_bike_num +cluster + Latitude + Longitude + season,
@@ -1001,7 +995,7 @@ summary(boost)
 end2.time <- Sys.time()
 time2.taken <- end2.time - start2.time
 time2.taken
-write_rds(boost, "C:/MSc Materials/Dissertation/dublin_bikes-master//saved_data_frames/gbm_model-prev_week.rds") # Save GB to avoid running it again
+write_rds(boost, "saved_data_frames/gbm_model-prev_week.rds") # Save GB to avoid running it again
 boost
 
 
@@ -1042,9 +1036,11 @@ rmsle(test$predGB, test$av_bikes)
 rmse(test$predGB, test$av_bikes)
 
 table(test2$av_ind)
-
+#######################END ###################################################
 
 ############################ Python Data - Plots #############################################
+
+#Reading the output data from python LSTM model
 from_python<-read_csv('regOutput-python.csv', col_types = cols('5' = col_character()))
 
 from_python<-from_python %>%
@@ -1052,13 +1048,12 @@ from_python<-from_python %>%
 
 
 from_python$predGBRound <- round(from_python$python_pred)
-
-
 from_python<-from_python %>%
   left_join(geo, by = "Number") 
 
 gb_err <- rmse(from_python$predGBRound, from_python$av_bikes)
 
+#Cleaning the Time column values
 for(i in  1:nrow(from_python)) {
   
   if(nchar(from_python[i,"Time"][[1]]) < 5) {
@@ -1121,65 +1116,10 @@ test_set_mean_predgb
 
 
 
-######################################## Plot results ############################
-# Plot prediction to compare it against actual results
-test$predGBRound <- round(test$predGBMCaret2)
-
-gb_err <- rmse(test$predGBRound, test$av_bikes)
-gb_err
-
-
-####################################################################################
-# Label for the error
-err_label <- paste("Error margin:", round(gb_err, 2))
-
-# plot means per stations
-base_plotgb <- test %>%
-  group_by(Number, Address, Time) %>%
-  summarise(
-    mean_av_bikes = mean(av_bikes),
-    mean_predgb = mean(predGBRound),
-    tot_stands = max(Bike_stands)
-  ) %>%
-  ggplot(aes(Time, mean_av_bikes, group = 1)) +
-  theme_minimal() +
-  geom_line(aes(y = tot_stands, colour = "Total stands"), linetype = 6) +
-  geom_line(aes(colour = "Actual"), size = 1.1) +
-  geom_line(aes(y = mean_predgb, group = 1, colour = "Predicted"), size = 1.1) +
-  geom_ribbon(aes(ymin = mean_predgb - gb_err, ymax = mean_predgb + gb_err), fill = "grey30", alpha = 0.2) +
-  theme(axis.text.x = element_text(angle = 90, size = 7)) + 
-  scale_x_discrete(
-    breaks = time_breaks,
-    labels = time_breaks
-  ) + 
-  ggtitle("Gradient Boosting prediction and actual number") +
-  ylab("Mean available bikes") +
-  scale_colour_manual(
-    breaks = c("Predicted", "Actual", "Total"),
-    values = c("Predicted"="red", "Actual"="blue", "Total stands"="black")
-  ) +
-  facet_wrap(~ Address) +
-  theme(
-    legend.box.background = element_rect(),
-    legend.position = "bottom"
-  )
-base_plotgb
-
-# Pull the station names as a factor level and create a label df for the annotation
-ann_levels <- test %>% group_by(Address) %>% summarise() %>% pull(Address) %>% as.factor()
-ann_text <- tibble(Time = "09:00", mean_av_bikes = 33, 
-                   Address = factor("Royal Hospital", levels = ann_levels))
-test_set_mean_predgb <- base_plotgb + 
-  geom_label(data = ann_text, label = err_label, size = 4)
-test_set_mean_predgb
-
-
-
-
 
 #######################################FITTING DISTRIBUTION FUNCTIONS ########################################
 
-
+# Funtion to estimate the alpha-beta parameters of a beta distribution
 estBetaParams <- function(mu, var) {
   alpha <- ((1 - mu) / var - 1 / mu) * mu ^ 2
   beta <- alpha * (1 / mu - 1)
@@ -1233,6 +1173,8 @@ dist_data <- all_clust %>%
   ungroup()
 
 dim(dist_data)
+
+# Cullen Frey graphs for stations during three timepoints
 for(i in c(5,34,19,28,38,15,96,82,30,80)) {
   
   for(j in c('09:00', '13:00', '17:00')) {  
@@ -1268,19 +1210,17 @@ for(i in c(5,34,19,28,38,15,96,82,30,80)) {
 # 17:00 -> 0.5
 
 
-
+#Kolmogorov-Smirnov Test
 ks.test(hueston, rnorm(1000))
 typeof(hueston)
+
+#Shapiro-Wilk Test for Normality
 shapiro.test(hueston)
 
-
 skewness(hueston)
-
 hist(hueston)
 hist(log(hueston))
-
 estBetaParams(mean(hueston), var(hueston))
-
 descdist(normalized)
 fit.beta <- fitdist((normalized), "beta")
 
@@ -1417,19 +1357,20 @@ fit2arima <- auto.arima(test2$av_bikes, seasonal=FALSE)
 fcast <- forecast(fit2arima, h=30)
 plot(fcast)
 
-acf(ts(diff(log10(test2$av_bikes))),main='ACF Tractor Sales')
-pacf(ts(diff(log10(test2))),main='PACF Tractor Sales')
+acf(ts(diff(log10(test2$av_bikes))),main='')
+pacf(ts(diff(log10(test2))),main='')
 
 
 head(df2)
 
+
+
+##################### PARETO DISTRIBUTION ##################
 library(PtProcess)
 library(actuar)
 fit.pareto <- fitdist(normalized, "pareto", start=list(shape=2, scale=600))
 
-
 plot(fit.pareto)
-
 
 # distribution, cdf, quantile and random functions for Pareto distributions
 dpareto <- function(x, xm, alpha) ifelse(x > xm , alpha*xm**alpha/(x**(alpha+1)), 0)
